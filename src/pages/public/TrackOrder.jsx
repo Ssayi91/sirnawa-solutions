@@ -30,13 +30,21 @@ export default function TrackOrder() {
 
   // Load order by trackingId
   useEffect(() => {
-    if (!trackingId) return;
+    if (!trackingId) {
+      setNotFound(true);
+      setLoading(false);
+      return;
+    }
+    
+    console.log('🔍 Tracking ID from URL:', trackingId);
     
     const loadOrder = async () => {
       try {
         const ordersRef = collection(db, 'orders');
         const q = query(ordersRef, where('trackingId', '==', trackingId));
         const snapshot = await getDocs(q);
+        
+        console.log('📡 Query result:', snapshot.empty ? 'No orders found' : `${snapshot.size} order(s) found`);
         
         if (snapshot.empty) {
           setNotFound(true);
@@ -45,25 +53,32 @@ export default function TrackOrder() {
         }
         
         const data = snapshot.docs[0].data();
+        console.log('✅ Order loaded:', { id: data.id, status: data.status });
         setOrder(data);
         
         // Load rider public info if assigned
         if (data.riderId) {
-          const riderSnap = await getDocs(
-            query(collection(db, 'users'), where('uid', '==', data.riderId))
-          );
-          if (!riderSnap.empty) {
-            const riderData = riderSnap.docs[0].data();
-            setRider({
-              name: riderData.profile?.fullName,
-              photo: riderData.profile?.profilePhotoUrl,
-              bike: riderData.profile?.bikeDescription,
-              rating: riderData.profile?.performance?.averageRating
-            });
+          try {
+            const ridersRef = collection(db, 'users');
+            const riderQ = query(ridersRef, where('uid', '==', data.riderId));
+            const riderSnap = await getDocs(riderQ);
+            if (!riderSnap.empty) {
+              const riderData = riderSnap.docs[0].data();
+              setRider({
+                name: riderData.profile?.fullName,
+                photo: riderData.profile?.profilePhotoUrl,
+                bike: riderData.profile?.bikeDescription,
+                rating: riderData.profile?.performance?.averageRating
+              });
+              console.log('🏍️ Rider info loaded:', riderData.profile?.fullName);
+            }
+          } catch (err) {
+            console.warn('⚠️ Could not load rider info (non-critical):', err);
+            // Continue without rider info - not critical for tracking page
           }
         }
       } catch (err) {
-        console.error('Error loading order:', err);
+        console.error('❌ Error loading order:', err);
         setNotFound(true);
       } finally {
         setLoading(false);
@@ -72,16 +87,21 @@ export default function TrackOrder() {
     
     loadOrder();
     
-    // Real-time updates
+    // Real-time updates listener
     const ordersRef = collection(db, 'orders');
     const q = query(ordersRef, where('trackingId', '==', trackingId));
     const unsubscribe = onSnapshot(q, (snapshot) => {
       if (!snapshot.empty) {
-        setOrder(snapshot.docs[0].data());
+        const newData = snapshot.docs[0].data();
+        console.log('🔄 Real-time update:', { status: newData.status });
+        setOrder(newData);
       }
     });
     
-    return () => unsubscribe();
+    return () => {
+      console.log('🧹 Cleaning up tracking listener');
+      unsubscribe();
+    };
   }, [trackingId]);
 
   // Status config for timeline
@@ -102,7 +122,7 @@ export default function TrackOrder() {
     if (!order) return;
     try {
       // In production, save to /ratings collection
-      console.log('Rating submitted:', { orderId: order.id, ...rating });
+      console.log('⭐ Rating submitted:', { orderId: order.id, ...rating });
       setRatingSubmitted(true);
       alert('Thank you for your feedback! 🙏');
     } catch (err) {
@@ -110,7 +130,7 @@ export default function TrackOrder() {
     }
   };
 
-  // WhatsApp helper
+  // ✅ FIXED: WhatsApp helper - NO EXTRA SPACES
   const getWhatsAppLink = (phone, message) => {
     const clean = phone?.replace(/\D/g, '');
     return `https://wa.me/254${clean}?text=${encodeURIComponent(message)}`;
@@ -231,6 +251,7 @@ export default function TrackOrder() {
                   <p className="text-sm" style={{ color: THEME.textSecondary }}>⭐ {rider.rating}/5</p>
                 )}
               </div>
+              {/* ✅ FIXED: WhatsApp link with no extra spaces */}
               <a 
                 href={getWhatsAppLink(order.clientPhone, `Hi ${rider.name}, I'm the recipient for order #${order.id?.slice(-6)}.`)}
                 target="_blank" rel="noopener noreferrer"
@@ -277,6 +298,7 @@ export default function TrackOrder() {
               <p className="font-medium" style={{ color: THEME.text }}>Need Help?</p>
               <p className="text-sm" style={{ color: THEME.textSecondary }}>Chat with support</p>
             </div>
+            {/* ✅ FIXED: Support WhatsApp link with no extra spaces */}
             <a
               href="https://wa.me/254736194051"
               target="_blank"
